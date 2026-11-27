@@ -1,7 +1,7 @@
 # SCHUNET — Development Status
 
 **Last reviewed:** 2026-11-27  
-**Source of truth:** Current repository snapshot; verify against the working tree before relying on this file.
+**Source of truth:** Supplied repository snapshot; verify against the working tree before relying on this file.
 
 ## Current baseline
 
@@ -35,9 +35,9 @@ SCHUNET is an early working prototype. The repository contains ESP32 firmware, a
 - [x] `designs/case_v2.stl` enclosure model.
 - [x] `util/repo_zip.py` initial repository ZIP script.
 
-## Verified source facts vs. project-note claims
+## Verified source facts and caveats
 
-- The firmware constructs `CHAT_URL` with the `/chat` path and posts an empty JSON object. It does not currently send a user-entered prompt.
+- The firmware constructs `CHAT_URL` with `/chat` and posts an empty JSON object. It does not currently send a user-entered prompt.
 - The server's `/chat` endpoint therefore falls back to `DEFAULT_PROMPT` unless another client supplies a prompt.
 - The server implements `/jobs`, but the ESP32 firmware currently uses `/chat`, not `/jobs`.
 - The microphone-shaped UI control triggers a request; the inspected firmware does not implement audio capture.
@@ -48,19 +48,33 @@ SCHUNET is an early working prototype. The repository contains ESP32 firmware, a
 
 ## Not implemented yet
 
-- [ ] Provider-neutral model interface.
-- [ ] Hosted provider adapters (OpenAI, Anthropic, Gemini, or others).
-- [ ] Hybrid model router or task-based model selection.
-- [ ] General-purpose tool registry and tool permission policy.
-- [ ] General agent runtime or multi-agent orchestration.
-- [ ] Persistent sessions or memory.
-- [ ] Desktop or web control interface.
-- [ ] Voice capture and speech-to-text.
-- [ ] Authentication and authorization for API/device access.
-- [ ] Automated tests and continuous integration.
-- [ ] Structured telemetry for model latency, token use, and cost.
+### Intelligence and organization
 
-## Known limitations
+- [ ] Provider-neutral model interface and normalized response type.
+- [ ] Hosted provider adapter using the tested Cloudflare AI Gateway path.
+- [ ] Configurable provider/model catalog and validation.
+- [ ] Task decomposition and task-level complexity classification.
+- [ ] Config-driven model routing with auditable reasons and explicit paid-use controls.
+- [ ] General-purpose agent runtime, organization/department/role definitions, and multi-agent delegation.
+- [ ] General-purpose tool registry and per-agent/task permission policy.
+
+### Monitoring and persistence
+
+- [ ] Structured task/execution event model.
+- [ ] Persistent operational task/event history.
+- [ ] Monitoring/control UI available from the first organization workflow.
+- [ ] Provider/model latency, token usage, cost, errors, and local resource telemetry where available.
+- [ ] Animated office visualization (future, optional presentation layer).
+
+### Platform and clients
+
+- [ ] Persistent conversational memory.
+- [ ] Authentication and authorization for API/device/control access.
+- [ ] Automated tests and continuous integration.
+- [ ] Desktop/web control interface (monitoring UI is now an initial requirement; exact UI technology is undecided).
+- [ ] Voice capture and speech-to-text.
+
+## Known implementation limitations
 
 - `DEFAULT_PROMPT`, system prompts, tool schema, and screen formatting are hard-coded in `server/server.py`.
 - The server has no provider abstraction; application logic is coupled to Ollama's API shape.
@@ -71,11 +85,23 @@ SCHUNET is an early working prototype. The repository contains ESP32 firmware, a
 - The display truncates long responses according to the firmware's dialogue layout.
 - The countdown screen is explicitly documented as temporary, with a target date of 2026-12-02.
 
-## Immediate recommended work
+## Agreed planning direction (not yet implemented)
 
-1. Establish and maintain this documentation/handoff workflow.
-2. Add a small automated test baseline around the current server endpoints and model/tool orchestration boundaries.
-3. Refactor the current Ollama integration behind a minimal provider interface without changing the ESP32 `/chat` contract.
-4. Extract the ESPN integration behind a minimal tool registration/dispatch boundary.
-5. Add configuration validation and safe secret handling.
-6. Add one hosted provider adapter and a deliberately simple explicit provider-selection option before attempting automatic routing.
+- The virtual organization begins with an IT department and a small set of roles.
+- Tasks are decomposed before execution-model selection; the model router chooses per task using complexity, capability, risk, privacy, cost, latency, and availability.
+- Agent roles may have default model profiles, but task requirements override role defaults.
+- Model aliases, provider settings, and routing policies are configuration-driven; credentials remain outside committed configuration.
+- Monitoring and structured operational history are foundational to the first organization workflow.
+- The animated office is a later visualization driven by actual agent/task state.
+- Keep the application a modular monolith initially and preserve the ESP32 `/chat` contract.
+
+## Immediate next engineering sequence
+
+1. Add a minimal test/dependency baseline and capture the existing `/health` and `/chat` behavior.
+2. Introduce validated application configuration and a provider-neutral model contract; move current Ollama behavior behind an adapter.
+3. Extract ESPN behind a small tool registry and permission boundary.
+4. Add structured model execution results and events (provider/model, routing metadata, latency, usage where available, outcome/error).
+5. Build the smallest useful monitoring UI against real backend state before expanding the agent organization.
+6. Add task lifecycle/decomposition and a deterministic, config-driven complexity router; test routing independently of live provider calls.
+7. Add the first hosted adapter through the user's tested Cloudflare Gateway path, with explicit enablement and no implicit paid fallback.
+

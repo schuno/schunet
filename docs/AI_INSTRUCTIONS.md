@@ -20,12 +20,18 @@ Then inspect the actual source files involved in the task. Documentation is a gu
 - Intelligence strategy: hybrid local and hosted providers.
 - SCHUNET should own orchestration and the client experience, not bind the system to one model vendor or device.
 - The ESP32 Codec terminal is the first working client and should remain functional during backend evolution.
+- The virtual organization is built from task-oriented agents; model selection happens per decomposed task, not as a permanent model assignment per role.
+- Provider/model aliases and routing policies are configuration-driven. Never silently route to paid hosted inference.
+- Structured task/execution events and a useful monitoring UI are foundational to the first organization workflow. A future animated office is presentation-only and must reflect real backend state.
 
 ## Engineering principles
 
 - Prefer small, explicit abstractions over speculative frameworks.
 - Keep provider-specific code inside provider adapters.
 - Keep tools/capabilities separate from model providers.
+- Keep agent role definitions separate from model profiles; route each task using complexity, capability, risk, privacy, cost, latency, and availability.
+- Record routing decisions and reasons so they can be inspected and tested.
+- Treat operational task history as distinct from conversational memory. Build monitoring on structured events, not inferred UI state.
 - Keep device API contracts independent of provider-specific response formats.
 - Do not introduce heavyweight services or dependencies without a concrete need.
 - Preserve backward compatibility where practical; call out breaking changes before implementing them.
