@@ -3,7 +3,7 @@
 #include <time.h>
 #include <TFT_eSPI.h>
 #include <math.h>
-#include "schunet_logo.h"
+#include "SCHUNET_logo.h"
 #include "secrets.h"
 
 // ==========================================

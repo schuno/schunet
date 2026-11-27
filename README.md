@@ -26,7 +26,7 @@ Where things live: standing rules in `docs/AI_INSTRUCTIONS.md`, decisions in `do
 From the repository root, run:
 
 ```bash
-python3 util/schunet.py
+python3 util/repo_zip.py
 ```
 
 This creates `schunet_ai_context.zip`, a compact package containing project documentation, relevant text/source files, and Git working-tree status. See [`util/README.md`](util/README.md) for details.
