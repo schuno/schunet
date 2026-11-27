@@ -1,0 +1,13 @@
+# c++
+secrets.h
+
+# arduino
+build
+
+# python
+__pycache__
+.venv
+*.rtf
+
+# other
+.DS_Store
