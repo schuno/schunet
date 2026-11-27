@@ -8,8 +8,8 @@
 **Goal:** Every model execution and tool call emits a structured event that is persisted, with unknown telemetry kept distinct from zero.
 
 **Context to include:**
-- `server/ai/` (all), `server/server.py`, `server/tests/` (names + the provider/queue tests)
-- `docs/ARCHITECTURE.md` §4.6 and §6, ADR 002 ("Monitoring minimum"), ADR 003
+- `server/ai/` (all), `server/server.py`, `docs/SMOKE_CHECKS.md`
+- `docs/ARCHITECTURE.md` §4.6 and §6, ADR 002 ("Monitoring minimum"), ADR 003 and 004
 
 **Deliverables:**
 - `server/ai/events.py`: event types and a small v1 vocabulary (request received, model execution started/finished/failed, tool invoked/finished/failed; queue wait recorded). Task-level events (decomposition, assignment, review) are defined later in Step 7; keep the vocabulary extensible.
@@ -17,24 +17,25 @@
 - A non-blocking way to write events (no busy loops, no per-token writes): record one event per lifecycle transition. Explain in the summary how DB writes avoid blocking the event loop.
 - Runtime/provider code records provider, model, latency, queue wait, token counts when returned (else NULL/unknown), tool name and outcome, error text (sanitized).
 - Config additions: database path, retention, preview length. Database file and directory are git-ignored.
-- Tests use a temporary DB; cover persistence across a simulated restart, unknown-vs-zero usage, retention pruning, and redaction.
+- Update `docs/SMOKE_CHECKS.md` with checks using the `sqlite3` command-line tool or a short documented Python snippet against the real DB: events appear after a chat request; they persist across a server restart; unknown usage is stored as NULL (not 0); retention pruning removes old rows when configured low; secrets and over-long prompts are redacted/truncated.
 
-**Acceptance:** all earlier tests pass; a `/chat` request produces the expected events in SQLite; idle server CPU unchanged (no timers added).
+**Acceptance (you run these):** the smoke checks behave as written, including a chat request producing the expected events in SQLite; idle server CPU unchanged (no timers added).
 
-**Docs to update:** new `docs/decisions/004-event-model.md` (vocabulary, schema version, retention, redaction), `ARCHITECTURE.md` §4.6 (implemented subset vs planned), `DEVELOPMENT_STATUS.md`, `ROADMAP.md` Phase 2 boxes (events, persistence, unknown telemetry), progress table, `CURRENT_SESSION.md`.
+**Docs to update:** new `docs/decisions/005-event-model.md` (vocabulary, schema version, retention, redaction), `ARCHITECTURE.md` §4.6 (implemented subset vs planned), `DEVELOPMENT_STATUS.md`, `ROADMAP.md` Phase 2 boxes (events, persistence, unknown telemetry), `docs/SMOKE_CHECKS.md`, progress table, `CURRENT_SESSION.md`.
 
 **Suggested prompt:**
 
 ```text
 Execute docs/plan/step-05.md (structured events + SQLite persistence).
-Read: all of server/ai/, server/server.py, the provider/queue tests in server/tests/,
-docs/ARCHITECTURE.md sections 4.6 and 6, docs/decisions/002 and 003.
+Read: all of server/ai/, server/server.py, docs/SMOKE_CHECKS.md,
+docs/ARCHITECTURE.md sections 4.6 and 6, docs/decisions/002, 003 and 004.
 
 Add server/ai/events.py and server/ai/store.py (stdlib sqlite3, WAL, retention, redaction),
 emit one event per lifecycle transition from the runtime/provider/tool paths, and persist
 them. Unknown usage/cost must be stored as NULL, never 0. No timers, no per-token writes.
 Explain how writes avoid blocking the event loop. Add config fields (db path, retention,
-preview length) and tests using a temp DB. Write docs/decisions/004-event-model.md.
+preview length) and smoke checks for persistence, NULL-vs-zero usage, retention and redaction (no
+automated tests; ADR 004). Write docs/decisions/005-event-model.md.
 ```
 
 **New context after:** yes.

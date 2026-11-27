@@ -15,7 +15,7 @@
 | Milestone | `IMPLEMENTATION_PLAN.md` (index) and `plan/step-*.md` | Status per step; rewritten per milestone | Only the current step file |
 | Session | `handoffs/CURRENT_SESSION.md` | Every session | Always, second |
 
-- **Current state of the code** lives in `DEVELOPMENT_STATUS.md` and, above all, in the code and tests.
+- **Current state of the code** lives in `DEVELOPMENT_STATUS.md` and, above all, in the code (automated tests are deferred; see ADR 004 and `docs/SMOKE_CHECKS.md`).
 - When a milestone finishes, move its plan files to `docs/archive/<milestone>/`. Decisions survive in ADRs, status survives in `DEVELOPMENT_STATUS.md`, and the next milestone gets a fresh plan.
 - `CURRENT_SESSION.md` stays about one page. It holds status, the last session's outcome, the next step, a ready-to-paste next prompt, and open issues. It does not repeat decisions (those are in ADRs) or standing rules (those are in `AI_INSTRUCTIONS.md`).
 
@@ -25,7 +25,7 @@
 2. **Plan check:** the assistant restates the outcome, files, plan, and compatibility/CPU/security implications. Redirect it here if needed.
 3. **Build:** the assistant works through the step and delivers a delta zip (changed/new files only).
 4. **Close:** when the code is done, paste the **Session closer** (below). The assistant updates the docs, rewrites `CURRENT_SESSION.md` including the next prompt block, and delivers the delta zip with the doc changes.
-5. **Apply and verify:** unzip the delta over your working tree, read the diff, run `cd server && pytest`, try the manual checks, commit.
+5. **Apply and verify:** unzip the delta over your working tree, read the diff, run the step's checks from `docs/SMOKE_CHECKS.md`, commit.
 6. **Roll forward:** re-zip the repo (without secrets) and go back to step 1 in a **new** chat.
 
 ### When to open a new context
@@ -34,11 +34,11 @@ Open a new chat when any of these is true:
 
 1. A step is finished and its delta zip delivered (the default boundary).
 2. You are about to start a different step, even a small one.
-3. There have been two or more rounds of failing-test debugging, or large files have been pasted into chat. Run the closer first, then continue from the handoff.
+3. There have been two or more rounds of failed-check debugging, or large files have been pasted into chat. Run the closer first, then continue from the handoff.
 4. The assistant contradicts earlier decisions or re-asks settled questions.
 5. You switch between backend, firmware, or a side task.
 
-Stay in the same chat for review feedback on what was just delivered, small fixes to that step's tests, and questions about the diff.
+Stay in the same chat for review feedback on what was just delivered, small fixes to that step's smoke checks, and questions about the diff.
 
 ### Switching providers mid-milestone
 
@@ -48,7 +48,7 @@ Nothing changes: paste the Next prompt block into any assistant. If you switch i
 
 - **Can't open zip files:** upload (or paste) only the files named in the step file, plus `docs/AI_INSTRUCTIONS.md` and `docs/handoffs/CURRENT_SESSION.md`.
 - **Can't produce zip files:** have it return each changed file in full, one code block per file with its repo-relative path, and the updated docs as complete files.
-- **Can't run tests:** it must say so and must not claim tests passed. You run them locally.
+- **Can't run the checks** (usually true: no local model or network): it must say which checks it did not run and must not claim any passed. You run them locally from `docs/SMOKE_CHECKS.md`.
 
 ## Keeping token use low
 
@@ -87,7 +87,8 @@ short.
 
 ```text
 Close out this step per docs/AI_INSTRUCTIONS.md "Before ending a session":
-1. Run the tests (or say exactly why you couldn't) and report real results.
+1. Write or update the step's smoke checks in docs/SMOKE_CHECKS.md. Run what you can and
+   say exactly which checks you could not run; never claim a check passed unless it ran.
 2. Update the docs this step requires (see "Docs to update" in the step file):
    the progress table in docs/IMPLEMENTATION_PLAN.md, DEVELOPMENT_STATUS.md, ROADMAP.md
    checkboxes (only for work actually done), ARCHITECTURE.md if structure changed, and
@@ -97,13 +98,13 @@ Close out this step per docs/AI_INSTRUCTIONS.md "Before ending a session":
    (the session opener from docs/WORKFLOW.md followed by the next step file's prompt).
 4. Give me the delta zip (changed/new files only, repo-relative paths) and a list of
    deleted files, then a summary of at most 25 lines: files changed, behavior changed,
-   tests run + results, decisions, known issues.
+   checks run vs not run, decisions, known issues.
 ```
 
 ### Session notes template (structure of `CURRENT_SESSION.md`)
 
 - **Status:** milestone, last completed step, date
-- **Last session:** objective, outcome, files changed, tests run and results
+- **Last session:** objective, outcome, files changed, checks run and results (and which were not run)
 - **Next step:** which step file, which files to read
 - **Next prompt:** copy-paste block
 - **Open issues and risks**

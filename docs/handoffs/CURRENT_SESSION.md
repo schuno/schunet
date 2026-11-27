@@ -1,72 +1,63 @@
-# SCHUNET — Current Development Handoff
+# SCHUNET — Current Session Handoff
 
-**Last updated:** 2026-11-27  
-**Purpose:** Provider-independent starting point. Update this file at the end of each substantive development session.
+**Milestone:** Foundation for a configurable virtual organization (see `docs/IMPLEMENTATION_PLAN.md`)
+**Last updated:** 2026-11-27
+**Workflow:** `docs/WORKFLOW.md`. Keep this file to about one page; it holds status and the next action only.
 
-## Current objective
+## Status
 
-Lay the foundation for a configurable virtual organization, beginning with IT, while preserving the existing ESP32 client. The first organization workflow must include monitoring from the start. Model selection is task-level and configuration-driven: decompose work, classify each task, then route it to an eligible model profile.
+Planning and documentation are complete. **Step 0 is done** (2026-11-27): the docs update was applied in the live `feature/corporation` tree and reviewed with `git diff`, and a virtual environment was created. Development Python is **3.12.3** (so stdlib `tomllib` is available; the `tomli` fallback is not needed locally). **No application code has changed** since the supplied snapshot. Steps 1–9 are not started.
 
-## Repository baseline (from supplied ZIP)
+## Last session
 
-- ESP32 Codec-style client in `schunet-client-2.7/`.
-- FastAPI/Ollama bridge in `server/server.py`.
-- One ESPN NFL scoreboard tool (`get_nfl_scoreboard`).
-- Firmware currently calls synchronous `POST /chat` with an empty JSON body.
-- Server also exposes in-memory `/jobs` endpoints, but the ESP32 does not currently use them.
-- No hosted provider adapters, provider router, general tool registry, agent framework, persistent task/event history, or desktop/web UI are implemented.
-- Supplied ZIP does not include `.git` metadata; branch and working-tree state must be checked in the live repository.
+- Objective: relax the plan for the proof of concept.
+- Outcome: the HTTP API (`/chat`, `/health`, `/jobs`) is no longer a compatibility constraint, and automated tests are deferred (ADR 004). Step 1 is now "dependency manifest + smoke-check baseline"; every step verifies by startup validation, manual checks in `docs/SMOKE_CHECKS.md`, and diff review. Event model ADR renumbered to 005. Docs only; nothing was run.
 
-## Accepted project decisions
+## Next step
 
-- Product direction: platform + hardware.
-- Intelligence strategy: hybrid local + hosted providers.
-- Keep provider and device integrations interchangeable.
-- Prefer a small modular Python application before considering separate services.
-- Decompose requests into tasks before selecting an execution model; route per task using complexity/capability/risk/privacy/cost/latency/availability.
-- Keep provider/model aliases and routing policies configuration-driven; agent-role defaults are preferences, not fixed model assignments.
-- Monitoring and structured operational history are part of the first organization workflow.
-- Future animated office is a presentation layer over real task/agent state.
-- Preserve the ESP32 `/chat` `reply` contract during initial backend refactoring.
+**Step 1** in a new chat: paste the block below with the repo zip attached. It reads `docs/plan/step-01.md` and the files that step lists. Step 1 is small; you may combine it with Step 2 in one chat by naming both step files.
 
-See:
-- `docs/decisions/001-platform-direction.md`
-- `docs/decisions/002-task-routing-and-observability.md`
+## Next prompt (paste into a fresh chat)
 
-## Work completed in this planning pass
+```text
+Continuing work on the SCHUNET repo (zip attached; if you can't open zips, tell me
+which files to paste). Work under docs/AI_INSTRUCTIONS.md.
 
-- Reworked project overview to describe the virtual organization direction and role/task separation.
-- Expanded architecture with task-level routing, config-driven model profiles, monitoring events, and the optional office visualization.
-- Reordered roadmap so monitoring is built alongside the first organization workflow, not postponed.
-- Updated development status to distinguish current implementation from agreed/planned work.
-- Added ADR 002 for task-level routing and first-class observability.
+Read, in this order: docs/AI_INSTRUCTIONS.md, docs/handoffs/CURRENT_SESSION.md, the
+step file named below, then ONLY the files that step file lists. Don't read other
+files unless you need them; if you do, tell me which and why. Docs are a guide and
+code is the source of truth, so report any discrepancy you find.
 
-## Immediate next steps
+Before coding, give me a short restatement of the outcome, the files affected, the
+smallest plan, and any compatibility / CPU / security implications. Proceed unless
+the plan conflicts with the ADRs or the step file; if it does, stop and ask.
 
-1. In the live `feature/corporation` working tree, compare these documentation changes with current files and inspect `git status`/`git diff`; the supplied ZIP cannot verify branch state.
-2. Add a minimal dependency manifest and automated test baseline around the existing FastAPI `/health` and `/chat` contracts.
-3. Define the first configuration schema (provider settings, model aliases/profiles, routing policy, limits, feature flags); keep credentials in environment variables/local ignored secrets.
-4. Introduce a provider-neutral model request/result contract and move the current Ollama integration behind it without changing `/chat` behavior.
-5. Add structured execution events and task/run persistence; decide whether SQLite is sufficient for the first local implementation.
-6. Build the smallest useful monitoring UI against real backend records before adding broad agent autonomy.
-7. Add task lifecycle/decomposition and deterministic routing with unit tests before wiring in hosted inference.
+Deliver changes as a zip containing only added/changed files at repo-relative paths
+(plus a list of deleted files), not pasted code. If you can't produce zip files, give
+each changed file in full, one code block per file with its path. Keep chat summaries
+short.
 
-## Guardrails
+Execute docs/plan/step-01.md (dependency manifest + smoke-check baseline).
+Read: server/server.py, server/README.md, .gitignore, docs/SMOKE_CHECKS.md, the
+"Verified source facts" section of docs/DEVELOPMENT_STATUS.md, Phase 0 of
+docs/ROADMAP.md, and docs/decisions/003 and 004.
 
-- Do not assume the Cloudflare AI Gateway account itself defines the underlying inference provider/model. Verify the tested request path and keep gateway and provider configuration distinct.
-- Do not silently fall back to paid hosted inference.
-- Do not let agent count imply unconstrained Ollama concurrency on the local Mac; use a bounded queue.
-- Do not grant agents unrestricted shell/filesystem/Git or external-side-effect permissions. Add scoped tool allowlists and approval gates.
-- Do not build the animated office before the real monitoring state model exists.
-- Do not remove the temporary countdown screen as part of unrelated work; its documented target is 2026-12-02.
+Goal: add server/requirements.txt, the .gitignore additions and an expanded
+server/README.md as listed in the step file, and check the baseline section of
+docs/SMOKE_CHECKS.md against the code (fix anything the code contradicts; label
+anything inferred). There are no automated tests in this project phase (ADR 004). Do not
+change server.py behavior; record awkward or buggy details in DEVELOPMENT_STATUS.md
+instead. You can't run Ollama, so say which smoke checks you did not run.
+```
 
-## Session closeout template
+## Open issues and risks
 
-At the end of the next implementation session, update this handoff with:
+- `README.md` and the roadmap refer to `python3 util/schunet.py` and `util/README.md`; the snapshot contains `util/repo_zip.py` and `util/util.zip` instead. Still unresolved; handle as a separate small cleanup, not as part of Step 1.
+- The firmware includes `schunet_logo.h`; the file is `SCHUNET_logo.h` (breaks on case-sensitive filesystems). Separate firmware cleanup.
+- The root `PROJECT_OVERVIEW.md` is an intentional pointer to `docs/`, not a duplicate.
 
-- Objective and outcome
-- Files changed
-- Tests run and results
-- Decisions made
-- Known issues
-- Exact next step
+## Pointers
+
+- Decisions: `docs/decisions/001`, `002`, `003`, `004`.
+- Standing rules and guardrails: `docs/AI_INSTRUCTIONS.md`. Manual checks: `docs/SMOKE_CHECKS.md`.
+- Time-sensitive: the Release Countdown screen targets 8:00 AM EST on 2026-12-02; do not remove it as part of unrelated work.

@@ -15,7 +15,7 @@ Update this table at the end of every step. Statuses: Planned, In progress, Done
 | Step | Title | Status | New context after? |
 |---|---|---|---|
 | 0 | [Align docs and confirm the live tree (you, no AI needed)](plan/step-00.md) | Planned (you, ~10 min) | Yes |
-| 1 | [Dependency manifest + characterization tests](plan/step-01.md) | Planned | Yes |
+| 1 | [Dependency manifest + smoke-check baseline](plan/step-01.md) | Planned | Yes |
 | 2 | [Validated configuration module](plan/step-02.md) | Planned | Yes |
 | 3 | [Provider contract, Ollama adapter, lifespan, bounded queue](plan/step-03.md) | Planned | Yes |
 | 4 | [Tool registry, ESPN extraction, runtime module (Checkpoint A)](plan/step-04.md) | Planned | Yes (Checkpoint A) |
@@ -30,21 +30,21 @@ Update this table at the end of every step. Statuses: Planned, In progress, Done
 
 Summarized from `docs/AI_INSTRUCTIONS.md` and ADR 003; follow the originals if they disagree.
 
-- Preserve the ESP32 contract: `POST /chat` with an empty or `{"prompt": ...}` body returns `{"reply": "..."}`. Do not touch the temporary countdown screen.
-- Behavior-preserving refactor through Step 4. Prompts, `think` flags, and token limits stay identical. `print` becomes `logging`.
+- The HTTP API (`/chat`, `/health`, `/jobs`) is not a stability contract (ADR 004). Call out breaking changes before implementing them, and record what firmware would need to change. Do not edit firmware or the temporary countdown screen in backend sessions.
+- Through Step 4, prompts, `think` flags, and token limits are preserved by default so diffs stay reviewable (not a hard constraint). `print` becomes `logging`.
 - Never silently route to paid hosted inference. Hosted is off unless explicitly enabled.
 - CPU budget: no busy loops, no per-token logging or events, inference concurrency bounded (default 1), bounded queues and retention. State any CPU-relevant choice in the session summary.
-- No new dependency without a stated reason. Tests must not need a live Ollama or ESPN (inject `httpx.MockTransport`).
-- Label claims Verified / Inferred / Planned. Do not claim tests passed unless run.
+- No new dependency without a stated reason. No automated tests during the PoC (ADR 004): verify with startup validation and `docs/SMOKE_CHECKS.md`, which every behavior-changing step extends.
+- Label claims Verified / Inferred / Planned. Do not claim any check passed unless it was run.
 - Docs are part of the deliverable; each step file lists the docs it must update.
 
 ## Later steps (outlines; refine prompts after Checkpoint B)
 
 ### Step 7 — Task lifecycle + deterministic complexity router
-Task records (goal, acceptance criteria, dependencies, assignee, complexity tier, required capabilities, risk, privacy constraint, status, attempts, result, review outcome), lifecycle states, a deterministic policy router over the config's tiers/aliases, and the routing decision (selected profile, actual provider/model, policy version, human-readable reason) recorded as events. Routing is unit-tested with synthetic tasks and no provider. Add bounded retries/timeouts/step limits. Tasks and dependencies then become visible in the UI. **Read at start:** `server/ai/` (config, events, store, runtime), ARCHITECTURE §4.2–4.3, ADR 002. **Docs:** new ADR for the task model, ARCHITECTURE §4.2/4.3, STATUS, ROADMAP Phase 3.
+Task records (goal, acceptance criteria, dependencies, assignee, complexity tier, required capabilities, risk, privacy constraint, status, attempts, result, review outcome), lifecycle states, a deterministic policy router over the config's tiers/aliases, and the routing decision (selected profile, actual provider/model, policy version, human-readable reason) recorded as events. Routing is checked with synthetic tasks and no provider (smoke checks; ADR 004 says to reconsider automated tests here). Add bounded retries/timeouts/step limits. Tasks and dependencies then become visible in the UI. **Read at start:** `server/ai/` (config, events, store, runtime), ARCHITECTURE §4.2–4.3, ADR 002. **Docs:** new ADR for the task model, ARCHITECTURE §4.2/4.3, STATUS, ROADMAP Phase 3.
 
 ### Step 8 — First hosted adapter (Cloudflare Gateway path)
-**Needs input from you first:** the actual tested gateway endpoint shape, auth method (by env-var name only), the underlying provider, and the model. Capture those in local `config.toml`/environment, never in the repo or the AI context. Then add the adapter behind the existing provider contract, disabled by default, no implicit paid fallback, usage/cost recorded when returned and unknown otherwise, with failure and availability handling covered by mocked-transport tests. **Docs:** ADR for the hosted path, ARCHITECTURE §4.4, STATUS, ROADMAP Phase 4.
+**Needs input from you first:** the actual tested gateway endpoint shape, auth method (by env-var name only), the underlying provider, and the model. Capture those in local `config.toml`/environment, never in the repo or the AI context. Then add the adapter behind the existing provider contract, disabled by default, no implicit paid fallback, usage/cost recorded when returned and unknown otherwise, with failure and availability handling covered by smoke checks (ADR 004 says to reconsider automated tests for spend gating before enabling hosted inference). **Docs:** ADR for the hosted path, ARCHITECTURE §4.4, STATUS, ROADMAP Phase 4.
 
 ### Step 9 — IT department roles + bounded agent execution
 Organization/department/role/agent configuration (IT Director/Orchestrator, Software Engineer, QA Engineer first; Product Owner and UX/UI as planning/review responsibilities), agent roster visible in the UI, bounded multi-step tool use with per-agent/per-task allowlists, approval checkpoints for consequential operations, and one concrete end-to-end software task as the evaluation. Role defaults remain routing *preferences*; task requirements win. **Docs:** ADR for organization config, ARCHITECTURE §4.1, PROJECT_OVERVIEW, STATUS, ROADMAP Phase 5.

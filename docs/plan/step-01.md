@@ -1,43 +1,43 @@
-# Step 1 — Dependency manifest + characterization tests
+# Step 1 — Dependency manifest + smoke-check baseline
 
 **Part of:** `docs/IMPLEMENTATION_PLAN.md` (milestone: configurable virtual organization foundation). Read this file for this step only.
 **Workflow:** start with the session opener and finish with the session closer from `docs/WORKFLOW.md`.
 **Next step file:** `docs/plan/step-02.md`
 
 
-**Goal:** Pin down today's `/health`, `/chat`, and `/jobs` behavior with automated tests *before* refactoring. No change to `server.py` behavior (ideally no change to `server.py` at all).
+**Goal:** Make the server reproducibly installable and record how the current prototype behaves as manual smoke checks, before refactoring. There is no automated test suite in this milestone (ADR 004). This step is small; it is fine to run it in the same chat as Step 2 by naming both step files in your prompt.
 
 **Context to include (read these):**
 - `server/server.py`, `server/README.md`, `.gitignore`
-- `docs/DEVELOPMENT_STATUS.md` ("Verified source facts" section), `docs/ROADMAP.md` (Phase 0), ADR 003
+- `docs/SMOKE_CHECKS.md` (already has a baseline section to verify against the code), `docs/DEVELOPMENT_STATUS.md` ("Verified source facts" section), `docs/ROADMAP.md` (Phase 0), ADR 003 and 004
 
 **Do not include:** firmware, designs, util, other ADRs.
 
 **Deliverables:**
-- `server/requirements.txt` (fastapi, uvicorn, httpx; `tomli` with marker `python_version < "3.11"`) and `server/requirements-dev.txt` (pytest and nothing else unless justified).
-- `server/pytest.ini` (set `pythonpath = .`), `server/tests/` with characterization tests.
-- Tests mock Ollama and ESPN by replacing the module-level `client` with an `httpx.AsyncClient(transport=httpx.MockTransport(...))`. Cover: `/health` shape; `/chat` with empty body uses `DEFAULT_PROMPT`; `/chat` with a prompt; reply shape `{"reply": str}`; `<think>` stripping; the tool path (first call returns `tool_calls`, second returns content, ESPN mocked); Ollama HTTP error becomes a 502; `/jobs` create then poll to `done`; unknown job returns 404.
-- `.gitignore` additions: `.pytest_cache`, `*.db`, `*.db-wal`, `*.db-shm`, `config.toml`, `.env`, `data/`.
-- Expanded `server/README.md`: venv, install, run, test commands.
+- `server/requirements.txt` (fastapi, uvicorn, httpx; `tomli` with marker `python_version < "3.11"`). No dev requirements file.
+- `.gitignore` additions: `*.db`, `*.db-wal`, `*.db-shm`, `config.toml`, `.env`, `data/`.
+- Expanded `server/README.md`: venv, install, run, and a pointer to `docs/SMOKE_CHECKS.md`.
+- Review the baseline section of `docs/SMOKE_CHECKS.md` against `server/server.py` and correct anything the code contradicts (for example response fields or status codes). Mark any expectation you could only infer from reading code as Inferred.
+- No change to `server/server.py` unless required; if you find something that looks like a bug or an awkward API detail, record it in `DEVELOPMENT_STATUS.md` instead of fixing it.
 
-**Acceptance:** `cd server && pip install -r requirements.txt -r requirements-dev.txt && pytest` passes with no network. Any behavior the tests reveal that looks like a bug is *recorded*, not fixed.
+**Acceptance (you run these):** fresh venv, `pip install -r requirements.txt`, server starts, and the baseline smoke checks behave as written. Note any surprises in `CURRENT_SESSION.md`.
 
-**Docs to update:** `DEVELOPMENT_STATUS.md` (test/dependency baseline implemented; record any quirks found), `ROADMAP.md` Phase 0 checkboxes, `IMPLEMENTATION_PLAN.md` progress table, `CURRENT_SESSION.md`.
+**Docs to update:** `DEVELOPMENT_STATUS.md` (dependency manifest implemented; automated tests deferred per ADR 004; record any quirks found), `ROADMAP.md` Phase 0 checkboxes, `docs/SMOKE_CHECKS.md` if corrected, `IMPLEMENTATION_PLAN.md` progress table, `CURRENT_SESSION.md`.
 
 **Suggested prompt:**
 
 ```text
-Execute docs/plan/step-01.md (dependency manifest + characterization tests).
-Read: server/server.py, server/README.md, .gitignore, and the "Verified source facts"
-section of docs/DEVELOPMENT_STATUS.md, Phase 0 of docs/ROADMAP.md, and
-docs/decisions/003-implementation-choices.md.
+Execute docs/plan/step-01.md (dependency manifest + smoke-check baseline).
+Read: server/server.py, server/README.md, .gitignore, docs/SMOKE_CHECKS.md, the
+"Verified source facts" section of docs/DEVELOPMENT_STATUS.md, Phase 0 of
+docs/ROADMAP.md, and docs/decisions/003 and 004.
 
-Goal: add requirements files, pytest config, and tests that pin the CURRENT behavior of
-/health, /chat and /jobs (including the two-pass ESPN tool flow, <think> stripping, the
-502 on upstream error, and the 404 for unknown jobs) using an injected httpx.MockTransport
-in place of server.client. Do not change server.py behavior; if you find something that
-looks like a bug, document it in DEVELOPMENT_STATUS.md instead of fixing it. Update
-.gitignore and server/README.md as listed in the plan. Use only pytest as a dev dependency.
+Goal: add server/requirements.txt, the .gitignore additions and an expanded
+server/README.md as listed in the step file, and check the baseline section of
+docs/SMOKE_CHECKS.md against the code (fix anything the code contradicts; label
+anything inferred). There are no automated tests in this project phase (ADR 004). Do not
+change server.py behavior; record awkward or buggy details in DEVELOPMENT_STATUS.md
+instead. You can't run Ollama, so say which smoke checks you did not run.
 ```
 
-**New context after:** yes.
+**New context after:** yes (or combine with Step 2 as noted above).
