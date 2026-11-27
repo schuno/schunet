@@ -3,7 +3,7 @@
 ## Overview
 **SCHUNET** is an embedded interactive terminal interface running on an **ESP32 microcontroller** paired with a **2.7-inch TFT display** (`240×320` portrait orientation, driven via `TFT_eSPI`). The user interface is styled after the classic *Metal Gear Solid* Codec communication screens, featuring phosphor-green vector/bitmap graphics, CRT scanline overlays, and modular navigation.
 
-The terminal talks to a **local LLM** (`qwen3.5:9b` served by Ollama) running on a laptop on the same Wi-Fi network, through a small Python bridge service (`server.py`). Tapping the microphone button on the AI Agent screen sends a request, shows a bouncing-dots "thinking" animation, executes any external API tools requested by the model, and prints the final reply in the dialogue box. This tool-calling loop was successfully validated end-to-end using a live ESPN NFL scoreboard tool (`get_nfl_scoreboard`), laying the groundwork for future multi-tool capabilities.
+The terminal talks to a **local LLM** (`qwen3.5:9b` served by Ollama) running on a laptop on the same Wi-Fi network, through a small Python bridge service (`server.py`). Tapping the microphone button on the AI Agent screen sends a request, shows a bouncing-dots "thinking" animation, executes any external API tools requested by the model, and **typewriter-streams** the reply into the dialogue box while animating the agent's mouth in sync with the speech. This tool-calling loop was successfully validated end-to-end using a live ESPN NFL scoreboard tool (`get_nfl_scoreboard`), laying the groundwork for future multi-tool capabilities.
 
 A second screen, a flying-rocket **release countdown**, was added as a fun, **temporary** novelty for the 8:00 AM EST, Dec 2, 2026 "Assisted Voice Auto Production Release". It is expected to be removed after that date (see the roadmap).
 
@@ -50,25 +50,26 @@ The UI below the header (`y = 54..320`) is driven by a clean state machine (`enu
   * Tapping a button hides the home menu and transitions to its target screen (`SCREEN_AI_AGENT` or `SCREEN_COUNTDOWN`).
 * **AI Agent Codec Screen (`SCREEN_AI_AGENT`):**
   * Displays an MGS Codec-style **portrait frame** (`96×112` px) containing a stylized, phosphor-green cybernetic/tactical agent bust with scanlines and frequency bars (`FREQ 140.85`).
-  * The agent's eyes are animated (`updateAgentEyes()`): random blinks (including occasional double-blinks) and subtle left/center/right gaze shifts, rendered through a small eye sprite.
+  * **Eye Animation (`updateAgentEyes()`):** Random blinks (including occasional double-blinks) and subtle left/center/right gaze shifts, rendered through a small `34×14` eye sprite.
+  * **Lip-Sync Mouth Animation (`updateAgentSpeech()` / `drawAgentMouthFrame()`):** While a reply is actively typing out, a dedicated `24×10` mouth sprite cycles through closed, half-open, and open jaw states with aligned CRT scanlines, pausing cleanly during spaces and punctuation before snapping shut once the message finishes.
   * **Microphone button** (`micButton`) sits to the left of the portrait, mirroring the signal-strength bars on the right. Its icon is drawn with primitives and dims while a request is in flight.
-  * **Dialogue/response terminal box** (`drawAgentDialogue()`) shows the model's reply with word wrapping, capped at 4 lines (overflow ends in `...`).
+  * **Typewriter Dialogue Box (`prepareDialogueLines()` + `updateAgentSpeech()`):** Pre-wraps replies up to 4 lines (truncating overflow with `...`) and reveals characters one by one (~35 ms per character, with brief pauses on punctuation) in `loop()`. If the user navigates away mid-stream and returns, the full `lastDialogue` is shown immediately.
   * A **`< BACK`** button returns to the main menu. If a request is still running, its reply is kept and shown when the user returns to this screen.
 * **Release Countdown Screen (`SCREEN_COUNTDOWN`, temporary):** a rocket flying through space with a red umbrella on it, a title, and a live countdown. Details in section 6.
 
 ### 4. LLM Chat Flow (device side)
 1. User taps the mic button → `startChatRequest()` (ignored if a request is already pending).
-2. `chatState` moves `CHAT_IDLE → CHAT_PENDING`; the mic icon dims and the dialogue box is cleared.
+2. `chatState` moves `CHAT_IDLE → CHAT_PENDING`; any active typewriter stream stops, the mouth closes, the mic icon dims, and the dialogue box is cleared.
 3. A FreeRTOS task (`chatTaskFn`, pinned to core 0, 10 KB stack) sends `POST {CHAT_URL}` with body `{}`, so the server uses its temporary default prompt.
 4. While pending, `updateChatRequest()` (called from `loop()` on core 1) animates **three bouncing dots** in the dialogue box every 40 ms through a `60×30` sprite (flicker-free).
-5. When the task finishes it writes `chatResult`, then flips `chatState` to `CHAT_DONE` or `CHAT_ERROR`. The main loop shows the text in the dialogue box and restores the mic icon.
+5. When the task finishes it writes `chatResult`, then flips `chatState` to `CHAT_DONE` or `CHAT_ERROR`. The main loop restores the mic icon and kicks off `startAgentSpeech(lastDialogue)` to typewriter-print the reply while moving the agent's mouth.
 
 Details worth knowing:
 * **Response parsing:** `extractReply()` is a small hand-written parser for `{"reply": "..."}` (no JSON library needed). It handles JSON escapes and UTF-8.
 * **ASCII folding:** the built-in TFT font is ASCII-only, so curly quotes, en/em dashes, and ellipses are converted to plain equivalents and other non-ASCII characters (emoji, accents) are dropped.
 * **Error messages shown in the box:** `NO WIFI LINK`, `BAD URL`, `SERVER ERROR <code>`, `LINK FAILED: <reason>`, `EMPTY RESPONSE`.
 * **Timeout:** `HTTPClient::setTimeout()` takes a `uint16_t` (ms), so the practical maximum is ~65 s. The sketch uses 60 s (`CHAT_TIMEOUT_MS`).
-* **Configuration:** set `CHAT_URL` (e.g. `http://192.168.1.50:8000/chat`) at the top of the sketch to the laptop's LAN IP.
+* **Configuration:** set `CHAT_URL` (e.g. `http://192.168.1.50:8000/chat`) via `secrets.h` (`CHAT_SERVER_HOST` / `CHAT_SERVER_PORT`).
 
 ### 5. Model Bridge Service & Tool Calling (`server.py`)
 A small FastAPI app that sits between the ESP32 and Ollama, handling LLM inference and executing external API tools.
@@ -133,9 +134,9 @@ A novelty screen counting down to **8:00 AM EST on Dec 2, 2026** (13:00 UTC, Uni
 ```text
 ├── schunet-client-2.7/schunet-client-2.7.ino  # Main application state machine, Wi-Fi loop, UI renderer, touch handler, chat client
 ├── schunet-client-2.7/schunet_logo.h        # 160x36 1-bit PROGMEM bitmap array for the SCHUNET header logo
-├── schunet-client-2.7/secrets.h        # secrets file (not tracked in source control) - a placeholder file also exists named secrets-placeholder.h, this file is tracked in source control
-├── server/server.py             # FastAPI bridge between the ESP32 and the local Ollama model (with tool execution)
-└── PROJECT_OVERVIEW.md    # System architecture and feature documentation
+├── schunet-client-2.7/secrets.h             # secrets file (not tracked in source control) - a placeholder file also exists named secrets-placeholder.h, this file is tracked in source control
+├── server/server.py                          # FastAPI bridge between the ESP32 and the local Ollama model (with tool execution)
+└── PROJECT_OVERVIEW.md                       # System architecture and feature documentation
 ```
 
 ---
@@ -145,8 +146,8 @@ A novelty screen counting down to **8:00 AM EST on Dec 2, 2026** (13:00 UTC, Uni
 * Only one external tool (`get_nfl_scoreboard`) is currently registered in `server.py`.
 * The dialogue box shows at most 4 lines; longer replies are truncated with `...`.
 * `/chat` is a single blocking request capped at ~65 s by `HTTPClient`; slow generations (e.g. a cold model load or multi-pass tool execution on the Intel CPU) can approach or exceed this timeout.
-* Replies appear all at once rather than streaming.
-* Wi-Fi credentials are hardcoded in the sketch (move to a `secrets.h` before sharing the code).
+* Replies are received in full from the server before typewriter playback begins on screen (true token-by-token HTTP streaming is not yet implemented).
+* Wi-Fi credentials are stored in `secrets.h` (use `secrets-placeholder.h` as a template when cloning).
 * The countdown needs Wi-Fi and NTP to show real values, and the screen itself is temporary.
 
 ---
@@ -157,7 +158,7 @@ A novelty screen counting down to **8:00 AM EST on Dec 2, 2026** (13:00 UTC, Uni
 1. **Prompt input:** replace the temporary hardcoded single-game prompt (options under consideration: on-screen touch keyboard, preset prompt buttons, a phone/browser page that posts text to the server, serial monitor input for development, or real speech-to-text) so users can query any NFL game or general topic dynamically.
 2. **Expand LLM Tools:** build on the `get_nfl_scoreboard` pattern in `server.py` to add more tools (e.g., additional sports leagues, local weather, calendar/reminders, or system telemetry) and short-TTL caching for external API responses.
 3. **Long-running requests:** switch the device to the `/jobs` submit-and-poll endpoints (already implemented on the server) if two-pass tool replies regularly exceed the ~65 s timeout, or move to WebSockets.
-4. **Streaming replies:** stream tokens from the server and typewriter-render them inside the dialogue box; consider paging or scrolling for longer replies.
+4. **End-to-end streaming:** stream tokens directly from the server during generation (building on the existing on-device typewriter renderer); consider paging or scrolling for longer replies.
 5. **Additional Navigation Modules:** Expand `ScreenID` and `homeButtons[]` with new screens while keeping the top SCHUNET header locked in place.
 6. **Audio & Codec Effects:** Integrate an I2S DAC/amp (such as MAX98357A) or piezo buzzer for authentic Codec call chimes and text-bleep sound effects.
 7. **Retire the countdown screen after 12/2/26:** remove `SCREEN_COUNTDOWN` from `enum ScreenID`, the "RELEASE COUNTDOWN" entry in `homeButtons[]`, its `case` in `navigateTo()`, and the serial `2` shortcut. Delete the countdown code block (`drawUmbrella`, `drawRocket`, `updateRocketFlame`, `updateStarfield`, `inRocketMask`, `respawnStar`, `drawStar`, `countdownBoxX`, `drawCountdownBoxes`, `drawCountdownValue`, `updateCountdown`, `drawCountdownScreen`), the related globals and `#define`s (`COLOR_UMBRELLA_RED`, `COUNTDOWN_TARGET_EPOCH`, `ROCKET_*`, `CD_BOX_*`, `FLAME_*`, `STAR_*`, `NUM_STARS`), and the `updateCountdown()`, `updateRocketFlame()` and `updateStarfield()` calls in `loop()`. The NTP setup (`configTime`) can stay if you want a clock for future features.

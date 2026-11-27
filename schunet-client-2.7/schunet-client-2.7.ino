@@ -1,4 +1,3 @@
-
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <time.h>
@@ -50,17 +49,23 @@
 #define GLOBE_SIZE 36
 #define GLOBE_RADIUS 15
 
-// Agent Portrait & Eye Sprite Geometry
+// Agent Portrait, Eye & Mouth Sprite Geometry
 #define PORTRAIT_W 96
 #define PORTRAIT_H 112
 #define EYE_BOX_W 34
 #define EYE_BOX_H 14
+#define MOUTH_BOX_W 24
+#define MOUTH_BOX_H 10
 
 // Dialogue box geometry (y/h fixed, x/w derived from screen width)
 #define DLG_X 12
 #define DLG_Y 216
 #define DLG_H 92
 #define DLG_MAX_LINES 4
+
+// Typewriter & Mouth Animation Timing
+#define TYPE_CHAR_INTERVAL 35   // ms per character
+#define MOUTH_ANIM_INTERVAL 75  // ms per mouth shape step
 
 // Bouncing dots sprite (centered inside dialogue box)
 #define DOTS_W 60
@@ -118,6 +123,7 @@ CodecButton micButton = { 20, 128, 44, 44, "", SCREEN_AI_AGENT, false };
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite globeSprite = TFT_eSprite(&tft);
 TFT_eSprite eyeSprite = TFT_eSprite(&tft);
+TFT_eSprite mouthSprite = TFT_eSprite(&tft);
 TFT_eSprite dotsSprite = TFT_eSprite(&tft);
 
 ScreenID currentScreen = SCREEN_HOME;
@@ -140,6 +146,16 @@ bool eyesClosed = false;
 unsigned long nextBlinkTime = 0;
 unsigned long blinkEndTime = 0;
 unsigned long nextLookTime = 0;
+
+// Agent Typewriter & Mouth Speech State
+String speechLines[DLG_MAX_LINES];
+int speechLineCount = 0;
+int speechLineIdx = 0;
+int speechCharIdx = 0;
+bool isSpeaking = false;
+uint8_t mouthState = 0;  // 0 = closed, 1 = half-open, 2 = open
+unsigned long nextCharTime = 0;
+unsigned long lastMouthTime = 0;
 
 // Chat request state (request runs in a background task so animations keep going)
 enum ChatState { CHAT_IDLE, CHAT_PENDING, CHAT_DONE, CHAT_ERROR };
@@ -320,6 +336,57 @@ void drawAgentEyesFrame(int8_t lookOffset, bool closed) {
   eyeSprite.pushSprite(ex, ey);
 }
 
+// Renders the animated mouth region into mouthSprite (state: 0=closed, 1=half-open, 2=open)
+void drawAgentMouthFrame(uint8_t state) {
+  int cx = portraitX + PORTRAIT_W / 2;
+  int cy = portraitY + PORTRAIT_H / 2 - 4;
+
+  // Top-left of the 24x10 mouth region on screen (covers cy+9 .. cy+18)
+  int16_t mx = cx - (MOUTH_BOX_W / 2);
+  int16_t my = cy + 9;
+
+  int scx = MOUTH_BOX_W / 2;
+  int scy = 3;  // corresponds to cy + 12
+
+  mouthSprite.fillSprite(TFT_BLACK);
+
+  // Restore subtle vertical portrait grid lines inside the mouth sprite
+  for (int gx = portraitX + 12; gx < portraitX + PORTRAIT_W - 8; gx += 16) {
+    if (gx >= mx && gx < mx + MOUTH_BOX_W) {
+      mouthSprite.drawFastVLine(gx - mx, 0, MOUTH_BOX_H, CODEC_DIM);
+    }
+  }
+
+  if (state == 0) {
+    // Closed mouth
+    mouthSprite.drawFastHLine(scx - 6, scy, 13, CODEC_BRIGHT);
+    mouthSprite.drawFastHLine(scx - 3, scy + 2, 7, CODEC_DIM);
+  } else if (state == 1) {
+    // Half-open talking frame
+    mouthSprite.drawFastHLine(scx - 6, scy - 1, 13, CODEC_GREEN);
+    mouthSprite.fillRect(scx - 5, scy, 11, 2, CODEC_DIM);
+    mouthSprite.drawFastHLine(scx - 5, scy + 2, 11, CODEC_BRIGHT);
+    mouthSprite.drawFastHLine(scx - 3, scy + 4, 7, CODEC_DIM);
+  } else {
+    // Wide-open talking frame
+    mouthSprite.drawFastHLine(scx - 6, scy - 1, 13, CODEC_BRIGHT);
+    mouthSprite.drawFastVLine(scx - 6, scy, 3, CODEC_GREEN);
+    mouthSprite.drawFastVLine(scx + 6, scy, 3, CODEC_GREEN);
+    mouthSprite.fillRect(scx - 5, scy, 11, 3, CODEC_DIM);
+    mouthSprite.drawFastHLine(scx - 5, scy + 3, 11, CODEC_BRIGHT);
+    mouthSprite.drawFastHLine(scx - 3, scy + 5, 7, CODEC_DIM);
+  }
+
+  // Match CRT scanlines aligned to screen Y coordinates
+  for (int y = 0; y < MOUTH_BOX_H; y++) {
+    if (((my + y) % 2) == 1) {
+      mouthSprite.drawFastHLine(0, y, MOUTH_BOX_W, TFT_BLACK);
+    }
+  }
+
+  mouthSprite.pushSprite(mx, my);
+}
+
 void drawAgentPortrait(int16_t px, int16_t py, int16_t pw, int16_t ph) {
   tft.drawRect(px, py, pw, ph, CODEC_GREEN);
   tft.drawRect(px + 2, py + 2, pw - 4, ph - 4, CODEC_DIM);
@@ -366,17 +433,19 @@ void drawAgentPortrait(int16_t px, int16_t py, int16_t pw, int16_t ph) {
   tft.drawLine(cx + 12, cy - 30, cx + 19, cy - 22, CODEC_GREEN);
   tft.drawLine(cx + 19, cy - 20, cx + 27, cy - 14, CODEC_GREEN);
   tft.drawLine(cx + 19, cy - 17, cx + 25, cy - 10, CODEC_GREEN);
-  // Lower nose, mouth & Codec earpiece
+
+  // Lower nose & Codec earpiece
   tft.drawFastVLine(cx, cy - 7, 12, CODEC_GREEN);
   tft.drawFastVLine(cx - 1, cy - 3, 8, CODEC_DIM);
   tft.drawFastHLine(cx - 2, cy + 5, 5, CODEC_BRIGHT);
-  tft.drawFastHLine(cx - 6, cy + 12, 13, CODEC_BRIGHT);
-  tft.drawFastHLine(cx - 3, cy + 14, 7, CODEC_DIM);
   tft.drawRect(cx - 21, cy - 4, 3, 10, CODEC_BRIGHT);
+
   // Apply scanlines across the static portrait base
   applyScanlines(px + 1, py + 1, pw - 2, ph - 2);
-  // Draw initial open eyes
+
+  // Draw initial open eyes & mouth
   drawAgentEyesFrame(eyeLookOffset, eyesClosed);
+  drawAgentMouthFrame(mouthState);
 }
 
 void updateAgentEyes() {
@@ -421,33 +490,24 @@ void drawDialogueFrame() {
   tft.drawRect(DLG_X + 2, DLG_Y + 2, bw - 4, DLG_H - 4, CODEC_DIM);
 }
 
-// Word-wrapped text inside the dialogue box. Limited to DLG_MAX_LINES; overflow ends in "..."
-void drawAgentDialogue(const String& text) {
-  drawDialogueFrame();
-
-  int16_t bw = tft.width() - 24;
-  int16_t curX = DLG_X + 10;
-  int16_t curY = DLG_Y + 10;
-  int16_t maxW = bw - 20;
-  int16_t lineH = 18;
+// Pre-wraps text into speechLines[] (up to DLG_MAX_LINES; overflow ends in "...")
+void prepareDialogueLines(const String& text) {
+  int16_t maxW = (tft.width() - 24) - 20;
 
   tft.setTextFont(2);
   tft.setTextSize(1);
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(CODEC_BRIGHT, TFT_BLACK);
 
-  String lines[DLG_MAX_LINES];
-  int n = 0;
+  speechLineCount = 0;
   bool truncated = false;
   String line = "";
   String word = "";
 
   auto pushLine = [&](const String& l) -> bool {
-    if (n >= DLG_MAX_LINES) {
+    if (speechLineCount >= DLG_MAX_LINES) {
       truncated = true;
       return false;
     }
-    lines[n++] = l;
+    speechLines[speechLineCount++] = l;
     return true;
   };
 
@@ -474,16 +534,131 @@ void drawAgentDialogue(const String& text) {
   }
   if (!truncated && line.length() > 0) pushLine(line);
 
-  if (truncated && n > 0) {
-    String& last = lines[n - 1];
+  if (truncated && speechLineCount > 0) {
+    String& last = speechLines[speechLineCount - 1];
     while (last.length() > 0 && tft.textWidth(last + "...", 2) > maxW) {
       last.remove(last.length() - 1);
     }
     last += "...";
   }
+}
 
-  for (int k = 0; k < n; k++) {
-    tft.drawString(lines[k], curX, curY + k * lineH, 2);
+// Word-wrapped text drawn immediately in full
+void drawAgentDialogue(const String& text) {
+  prepareDialogueLines(text);
+  drawDialogueFrame();
+
+  int16_t curX = DLG_X + 10;
+  int16_t curY = DLG_Y + 10;
+  int16_t lineH = 18;
+
+  tft.setTextFont(2);
+  tft.setTextSize(1);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(CODEC_BRIGHT, TFT_BLACK);
+
+  for (int k = 0; k < speechLineCount; k++) {
+    tft.drawString(speechLines[k], curX, curY + k * lineH, 2);
+  }
+}
+
+// Begins typewriter printing of `text` with synchronized mouth movement
+void startAgentSpeech(const String& text) {
+  prepareDialogueLines(text);
+  drawDialogueFrame();
+
+  speechLineIdx = 0;
+  speechCharIdx = 0;
+  isSpeaking = (speechLineCount > 0);
+  mouthState = isSpeaking ? 1 : 0;
+  nextCharTime = millis();
+  lastMouthTime = millis();
+
+  if (currentScreen == SCREEN_AI_AGENT) {
+    drawAgentMouthFrame(mouthState);
+  }
+}
+
+// Advances the typewriter print & lip-sync mouth movement in loop()
+void updateAgentSpeech() {
+  if (!isSpeaking) return;
+
+  // If the user navigated away mid-speech, finish silently so `lastDialogue` is ready on return
+  if (currentScreen != SCREEN_AI_AGENT) {
+    isSpeaking = false;
+    mouthState = 0;
+    return;
+  }
+
+  unsigned long now = millis();
+
+  // 1. Advance Typewriter Characters
+  if (now >= nextCharTime) {
+    // Skip any empty lines
+    while (speechLineIdx < speechLineCount && speechCharIdx >= (int)speechLines[speechLineIdx].length()) {
+      speechLineIdx++;
+      speechCharIdx = 0;
+    }
+
+    if (speechLineIdx >= speechLineCount) {
+      // Finished speaking: close mouth cleanly
+      isSpeaking = false;
+      if (mouthState != 0) {
+        mouthState = 0;
+        drawAgentMouthFrame(0);
+      }
+      return;
+    }
+
+    // Draw prefix up to current character cleanly without flicker
+    String partial = speechLines[speechLineIdx].substring(0, speechCharIdx + 1);
+    char ch = speechLines[speechLineIdx][speechCharIdx];
+
+    int16_t curX = DLG_X + 10;
+    int16_t curY = DLG_Y + 10 + (speechLineIdx * 18);
+
+    tft.setTextFont(2);
+    tft.setTextSize(1);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextColor(CODEC_BRIGHT, TFT_BLACK);
+    tft.drawString(partial, curX, curY, 2);
+
+    speechCharIdx++;
+
+    // Natural cadence: slight pauses on punctuation, snappy on regular letters
+    if (ch == '.' || ch == '!' || ch == '?') {
+      nextCharTime = now + (TYPE_CHAR_INTERVAL * 5);
+    } else if (ch == ',' || ch == ':' || ch == ';') {
+      nextCharTime = now + (TYPE_CHAR_INTERVAL * 3);
+    } else {
+      nextCharTime = now + TYPE_CHAR_INTERVAL;
+    }
+  }
+
+  // 2. Animate Mouth in Sync with Current Character
+  if (now - lastMouthTime >= MOUTH_ANIM_INTERVAL) {
+    lastMouthTime = now;
+
+    char activeChar = 'a';
+    if (speechLineIdx < speechLineCount && speechCharIdx > 0) {
+      int idx = min(speechCharIdx - 1, (int)speechLines[speechLineIdx].length() - 1);
+      activeChar = speechLines[speechLineIdx][idx];
+    }
+
+    uint8_t nextMouth = 0;
+    if (activeChar == ' ' || activeChar == '.' || activeChar == ',' || activeChar == '!' || activeChar == '?') {
+      nextMouth = 0;  // Pause with mouth closed on spaces and punctuation
+    } else {
+      static const uint8_t pattern[] = { 1, 2, 1, 0, 2, 1 };
+      static uint8_t step = 0;
+      nextMouth = pattern[step];
+      step = (step + 1) % 6;
+    }
+
+    if (nextMouth != mouthState) {
+      mouthState = nextMouth;
+      drawAgentMouthFrame(mouthState);
+    }
   }
 }
 
@@ -521,9 +696,10 @@ void drawAIAgentScreen() {
   tft.drawString("FREQ 140.85", tft.width() - 14, 66);
   portraitX = (tft.width() - PORTRAIT_W) / 2;
   portraitY = 94;
-  // Reset eye state on entry
+  // Reset eye & mouth state on entry
   eyeLookOffset = 0;
   eyesClosed = false;
+  mouthState = 0;
   nextBlinkTime = millis() + 1800;
   nextLookTime = millis() + 2400;
   drawAgentPortrait(portraitX, portraitY, PORTRAIT_W, PORTRAIT_H);
@@ -818,6 +994,8 @@ void drawCountdownScreen() {
 }
 
 void navigateTo(ScreenID nextScreen) {
+  isSpeaking = false;
+  mouthState = 0;
   currentScreen = nextScreen;
   tft.fillRect(0, HEADER_HEIGHT, tft.width(), tft.height() - HEADER_HEIGHT, TFT_BLACK);
   switch (currentScreen) {
@@ -932,6 +1110,11 @@ void chatTaskFn(void* param) {
 
 void startChatRequest() {
   if (chatState != CHAT_IDLE) return;
+  isSpeaking = false;
+  if (mouthState != 0) {
+    mouthState = 0;
+    if (currentScreen == SCREEN_AI_AGENT) drawAgentMouthFrame(0);
+  }
   chatState = CHAT_PENDING;
   dotsPhase = 0.0;
   lastDotsTime = 0;
@@ -951,8 +1134,8 @@ void updateChatRequest() {
     lastDialogue = chatResult;
     chatState = CHAT_IDLE;
     if (currentScreen == SCREEN_AI_AGENT) {
-      drawAgentDialogue(lastDialogue);
       drawMicButton();  // restore bright icon
+      startAgentSpeech(lastDialogue);
     }
   }
 }
@@ -1029,6 +1212,7 @@ void setup() {
   drawStaticHeader();
   globeSprite.createSprite(GLOBE_SIZE, GLOBE_SIZE);
   eyeSprite.createSprite(EYE_BOX_W, EYE_BOX_H);
+  mouthSprite.createSprite(MOUTH_BOX_W, MOUTH_BOX_H);
   dotsSprite.createSprite(DOTS_W, DOTS_H);
   navigateTo(SCREEN_HOME);
   WiFi.mode(WIFI_STA);
@@ -1059,14 +1243,17 @@ void loop() {
   // 2. AI Agent Eye Blink & Gaze Animation
   updateAgentEyes();
 
-  // 3. Chat request progress (bouncing dots / show reply)
+  // 3. Chat request progress (bouncing dots / start speech)
   updateChatRequest();
 
-  // 4. Countdown screen (timer digits + rocket flame)
+  // 4. AI Agent Typewriter Speech & Lip-Sync Mouth Animation
+  updateAgentSpeech();
+
+  // 5. Countdown screen (timer digits + rocket flame)
   updateCountdown();
   updateRocketFlame();
   updateStarfield();
 
-  // 5. Touch & Serial Navigation
+  // 6. Touch & Serial Navigation
   handleInputs();
 }
